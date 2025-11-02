@@ -20,8 +20,12 @@ function normalize(s: string): string {
 }
 
 // strip leading/trailing punctuation, but keep inner dots for node.js / .net
+// We also strip leading/trailing slashes because job descriptions
+// sometimes wrap skills in '/' (e.g. '/AWS/') which should not
+// become part of the keyword itself.  See corresponding update in the
+// training script.
 function cleanEdgePunct(tok: string): string {
-  return tok.replace(/^[.,;:()]+|[.,;:()]+$/g, '')
+  return tok.replace(/^[.,;:()\/]+|[.,;:()\/]+$/g, '')
 }
 
 const STOPWORDS = new Set([
@@ -34,6 +38,8 @@ const STOPWORDS = new Set([
   'about','years','year','plus','include','including','across',
   'work','working','worked','design','designed','develop','developed','maintain','maintained','support','supported','provide','provided',
   'good','great','excellent','strong','communication','experience','experienced','familiarity','knowledge','understanding'
+  ,'attitude','ability'
+  ,'methodology','both'
 ])
 
 // Never allow these as standalone keywords
@@ -47,6 +53,7 @@ const EXCLUDE_TOKENS = new Set([
 const GENERIC_SINGLE_WORDS = new Set([
   'customer','clients','stakeholders','users','business','product','services','applications','systems',
   'process','processes','tools','solutions','environment','projects','project','platform','platforms','framework'
+  ,'attitude','ability'
 ])
 
 const TLD_RE = /\b[a-z0-9-]+\.(com|net|org|io|in|co|ai|dev|tech|gov|edu)\b/i;
@@ -104,6 +111,18 @@ const SYNONYMS: Record<string, string[]> = {
   'microsoft word': ['word'],
   // ats
   'applicant tracking system': ['ats'],
+
+  // agile / SAFe / scaled agile framework
+  'safe': ['scaled agile framework','safe methodology','scaled agile','safe agile','sa fe','sa-fe','scaled-agile framework','scaled-agile'],
+  // Map the full phrase back to the canonical term as well
+  'scaled agile framework': ['safe'],
+  // google btp (Business Technology Platform).  Map to gcp as it belongs to the Google Cloud family.
+  'google btp': ['btp','google business technology platform','business technology platform','google cloud btp'],
+
+  // safeagile appears when "SAFe agile" terms are concatenated without space
+  'safeagile': ['safe agile','safe','agile'],
+  // googlebtp appears when slashes or spaces are removed; map it back
+  'googlebtp': ['google btp','btp','google cloud','gcp','google business technology platform'],
 }
 
 function variants(term: string): string[] {
@@ -160,7 +179,19 @@ function isNoisyToken(tok: string): boolean {
 
 function tokenize(text: string): string[] {
   const t = normalize(text)
-  const raw = t.split(' ').map(cleanEdgePunct)
+  let raw = t.split(' ').map(cleanEdgePunct)
+  // Collapse repeated forms like 'azure/azure' into 'azure' while
+  // preserving asymmetric skills like 'ci/cd'.  We only collapse when
+  // the slash-separated parts are identical after normalisation.
+  raw = raw.map(tok => {
+    if (tok.includes('/')) {
+      const parts = tok.split('/').filter(Boolean)
+      if (parts.length === 2 && parts[0] && parts[1] && parts[0] === parts[1]) {
+        return parts[0]
+      }
+    }
+    return tok
+  })
   return raw.filter(tok => tok && !isNoisyToken(tok))
 }
 
@@ -334,8 +365,13 @@ export async function POST(req: NextRequest) {
       const kw_ratio = kw_present / (jdKeywords.length || 1)
       return [overlap_ratio, resume_coverage, length_diff, kw_ratio]
     }
-    const LR_WEIGHTS = [2.64137283, 2.37778977, -0.18100524, 2.10916598]
-    const LR_INTERCEPT = -2.288096774813138
+    // Updated logistic regression weights learned from a larger set of
+    // synthetic examples (see train_match_model.py).  The new training
+    // includes cloud and SAFe/agile scenarios and negative controls, and
+    // filters out generic tokens like "methodology" and "both".  As
+    // a result, the length difference feature now has a modest positive weight.
+    const LR_WEIGHTS = [2.97968284, 2.69245608, 0.72889825, 2.32515518]
+    const LR_INTERCEPT = -2.099744808029782
     const feats = computeFeatures(resumeText, jdText)
     let z = LR_INTERCEPT
     for (let i = 0; i < feats.length; i++) z += feats[i] * LR_WEIGHTS[i]
