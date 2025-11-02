@@ -40,7 +40,7 @@ const STOPWORDS = new Set([
   'good','great','excellent','strong','communication','experience','experienced','familiarity','knowledge','understanding'
   ,'attitude','ability'
   ,'methodology','both'
-  ,'looking','can-do','can do','btp'
+  ,'looking','can-do','can do','btp','various','appropriate','distinctive','into','stay','advantage','independently','well','etc','problem','solving','diverse','highly','positive','connecting'
 ])
 
 // Never allow these as standalone keywords
@@ -139,6 +139,9 @@ const SYNONYMS: Record<string, string[]> = {
   'customer service': ['client service','customer support','customer success'],
   'sales': ['sales professional','salesperson','business development'],
   'project manager': ['program manager','pm'],
+
+  // generative AI domain
+  'generative ai': ['generative artificial intelligence','gen ai'],
 }
 
 function variants(term: string): string[] {
@@ -234,8 +237,17 @@ function bigrams(tokens: string[]): string[] {
     // skip if either token is noisy
     if (isNoisyToken(a) || isNoisyToken(b)) continue
     // filter out known generic or nonsensical bigrams
-    if (/^(corporate office|balances accurate|worked addition)$/i.test(`${a} ${b}`)) continue
-    out.push(`${a} ${b}`)
+    const combined = `${a} ${b}`
+    if (/^(corporate office|balances accurate|worked addition)$/i.test(combined)) continue
+    // retain only skill-like bigrams: contains tech chars/digits OR one of the
+    // tokens or the combined phrase matches a known synonym key.  This helps
+    // reduce generic pairs like "advantage not" or "drive innovation" while
+    // still allowing domain-specific phrases such as "patient care" or
+    // "digital marketing" (added to the synonyms dictionary).
+    const synSet = SYNONYMS_KEYS
+    const skillish = /[+.#/0-9]/.test(combined) || synSet.has(a) || synSet.has(b) || synSet.has(combined)
+    if (!skillish) continue
+    out.push(combined)
   }
   return out
 }
