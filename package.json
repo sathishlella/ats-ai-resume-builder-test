@@ -1,0 +1,40 @@
+{
+  "name": "ats-ai-resume-builder",
+  "version": "1.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@react-three/drei": "9.114.6",
+    "@react-three/fiber": "8.17.10",
+    "autoprefixer": "10.4.20",
+    "docx": "8.5.0",
+    "framer-motion": "11.5.5",
+    "lucide-react": "0.453.0",
+    "mammoth": "1.7.1",
+    "next": "14.2.15",
+    "pdf-lib": "1.17.1",
+    "pdfjs-dist": "4.4.168",
+    "postcss": "8.4.47",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "tailwindcss": "3.4.13",
+    "three": "0.170.0",
+    "zod": "3.23.8",
+    "react-markdown": "9.0.3",
+    "remark-gfm": "4.0.0",
+    "pdf-parse": "^1.1.1",
+    "@vercel/blob": "^0.25.0"
+
+  },
+  "devDependencies": {
+    "@types/node": "20.14.12",
+    "@types/react": "18.3.3",
+    "@types/react-dom": "18.3.0",
+    "typescript": "5.6.3"
+  }
+}
