@@ -40,6 +40,7 @@ const STOPWORDS = new Set([
   'good','great','excellent','strong','communication','experience','experienced','familiarity','knowledge','understanding'
   ,'attitude','ability'
   ,'methodology','both'
+  ,'looking','can-do','can do','btp'
 ])
 
 // Never allow these as standalone keywords
@@ -123,6 +124,21 @@ const SYNONYMS: Record<string, string[]> = {
   'safeagile': ['safe agile','safe','agile'],
   // googlebtp appears when slashes or spaces are removed; map it back
   'googlebtp': ['google btp','btp','google cloud','gcp','google business technology platform'],
+
+  // -------------------- non‑IT and general domains --------------------
+  'patient care': [],
+  'nurse': ['nursing'],
+  'cpr': ['cardiopulmonary resuscitation'],
+  'seo': ['search engine optimization','search engine optimisation'],
+  'digital marketing': ['online marketing','internet marketing'],
+  'content creation': ['content writing','content development','content creation'],
+  'accountant': ['accounting','accountancy','accounts'],
+  'quickbooks': ['intuit quickbooks','quickbooks pro'],
+  'taxation': ['tax','taxes'],
+  'marketing': ['marketing specialist','marketer'],
+  'customer service': ['client service','customer support','customer success'],
+  'sales': ['sales professional','salesperson','business development'],
+  'project manager': ['program manager','pm'],
 }
 
 function variants(term: string): string[] {
@@ -179,20 +195,34 @@ function isNoisyToken(tok: string): boolean {
 
 function tokenize(text: string): string[] {
   const t = normalize(text)
-  let raw = t.split(' ').map(cleanEdgePunct)
-  // Collapse repeated forms like 'azure/azure' into 'azure' while
-  // preserving asymmetric skills like 'ci/cd'.  We only collapse when
-  // the slash-separated parts are identical after normalisation.
-  raw = raw.map(tok => {
-    if (tok.includes('/')) {
+  const raw = t.split(' ').map(cleanEdgePunct)
+  const out: string[] = []
+  for (let tok of raw) {
+    if (!tok) continue
+    // Handle slash‑separated tokens.  We keep tokens like 'ci/cd'
+    // intact because they represent a single concept (continuous
+    // integration/continuous delivery).  For other tokens with '/',
+    // split them into their parts.  Additionally collapse repeated
+    // forms like 'azure/azure' into just 'azure'.
+    if (tok.includes('/') && tok !== 'ci/cd') {
       const parts = tok.split('/').filter(Boolean)
-      if (parts.length === 2 && parts[0] && parts[1] && parts[0] === parts[1]) {
-        return parts[0]
+      if (parts.length === 2 && parts[0] === parts[1]) {
+        tok = parts[0]
+      } else {
+        for (const p of parts) out.push(p)
+        continue
       }
     }
-    return tok
-  })
-  return raw.filter(tok => tok && !isNoisyToken(tok))
+      // Special case: 'safeagile' appears when SAFe and Agile are concatenated.
+      // Split it into two separate tokens for better matching.
+      if (tok === 'safeagile') {
+        out.push('safe')
+        out.push('agile')
+        continue
+      }
+    out.push(tok)
+  }
+  return out.filter(tok => tok && !isNoisyToken(tok))
 }
 
 function bigrams(tokens: string[]): string[] {
@@ -201,17 +231,10 @@ function bigrams(tokens: string[]): string[] {
     const a = cleanEdgePunct(tokens[i])
     const b = cleanEdgePunct(tokens[i + 1])
     if (!a || !b) continue
+    // skip if either token is noisy
     if (isNoisyToken(a) || isNoisyToken(b)) continue
-
-    // keep bigram only if it looks skill-ish:
-    // contains tech chars/digits OR either term matches a known synonym key
-    const synSet = SYNONYMS_KEYS
-    const skillish = /[+.#/0-9]/.test(`${a} ${b}`) || synSet.has(a) || synSet.has(b)
-    if (!skillish) continue
-
-    // filter generic pairs
+    // filter out known generic or nonsensical bigrams
     if (/^(corporate office|balances accurate|worked addition)$/i.test(`${a} ${b}`)) continue
-
     out.push(`${a} ${b}`)
   }
   return out
@@ -365,13 +388,13 @@ export async function POST(req: NextRequest) {
       const kw_ratio = kw_present / (jdKeywords.length || 1)
       return [overlap_ratio, resume_coverage, length_diff, kw_ratio]
     }
-    // Updated logistic regression weights learned from a larger set of
-    // synthetic examples (see train_match_model.py).  The new training
-    // includes cloud and SAFe/agile scenarios and negative controls, and
-    // filters out generic tokens like "methodology" and "both".  As
-    // a result, the length difference feature now has a modest positive weight.
-    const LR_WEIGHTS = [2.97968284, 2.69245608, 0.72889825, 2.32515518]
-    const LR_INTERCEPT = -2.099744808029782
+    // Updated logistic regression weights learned from an expanded set of
+    // synthetic examples spanning IT, non-IT and medical domains (see
+    // train_match_model.py).  This training uses a broadened tokenisation
+    // and includes bigrams for phrases like "patient care", "digital marketing"
+    // and "quickbooks".  The weights below reflect the latest fit.
+    const LR_WEIGHTS = [3.42460815, 3.26724842, 0.18268801, 1.99481085]
+    const LR_INTERCEPT = -2.2560989601705863
     const feats = computeFeatures(resumeText, jdText)
     let z = LR_INTERCEPT
     for (let i = 0; i < feats.length; i++) z += feats[i] * LR_WEIGHTS[i]
